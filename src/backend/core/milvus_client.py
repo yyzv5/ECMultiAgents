@@ -197,8 +197,96 @@ class MilvusClient:
     # ── 占位方法（T2 实现）──
 
     def hybrid_search(self, query: str, top_k: int | None = None) -> list[dict]:
-        """完整检索链路：编码 → 混合检索 → 重排 → 置信度。T2 实现。"""
-        raise NotImplementedError
+        """完整检索链路：编码 → 混合检索 → 重排 → 置信度。
+
+        Args:
+            query: 用户查询文本。
+            top_k: 精排后保留的结果数。默认使用 ``settings.RERANKER_TOP_K``。
+
+        Returns:
+            按置信度降序排列的结果列表，每条含 text、source、hybrid_score、
+            rerank_logit、confidence。
+        """
+        import torch
+        from pymilvus import AnnSearchRequest, WeightedRanker
+
+        if top_k is None:
+            top_k = settings.RERANKER_TOP_K
+
+        # 1. 编码
+        dense_vec, sparse_weights = self.embed_query(query)
+        sparse_vec = self._sparse_to_milvus(sparse_weights)
+
+        # 2. 构建 AnnSearchRequest
+        req_dense = AnnSearchRequest(
+            data=[dense_vec],
+            anns_field="dense_vector",
+            param={"metric_type": "IP", "params": {"nprobe": 10}},
+            limit=settings.MILVUS_HYBRID_TOP_K,
+        )
+        req_sparse = AnnSearchRequest(
+            data=[sparse_vec],
+            anns_field="sparse_vector",
+            param={"metric_type": "IP", "params": {}},
+            limit=settings.MILVUS_HYBRID_TOP_K,
+        )
+
+        # 3. WeightedRanker 融合
+        ranker = WeightedRanker(
+            settings.MILVUS_DENSE_WEIGHT,
+            settings.MILVUS_SPARSE_WEIGHT,
+        )
+
+        # 4. Milvus hybrid_search
+        search_results = self._collection.hybrid_search(
+            reqs=[req_dense, req_sparse],
+            rerank=ranker,
+            limit=settings.MILVUS_HYBRID_TOP_K,
+            output_fields=["text", "source"],
+        )
+
+        # search_results[0] 是第一组（也是唯一一组）的结果
+        hits = search_results[0]
+        if not hits:
+            return []
+
+        # 5. 提取文本、来源、融合分数
+        texts: list[str] = []
+        metas: list[dict] = []
+        for hit in hits:
+            text = hit.get("text")
+            source = hit.get("source")
+            texts.append(text)
+            metas.append({
+                "text": text,
+                "source": source,
+                "hybrid_score": hit.distance,
+            })
+
+        # 6. Reranker 精排
+        reranker_model, reranker_tokenizer = self._load_reranker()
+        pairs = [[query, text] for text in texts]
+        inputs = reranker_tokenizer(
+            pairs, padding=True, truncation=True,
+            return_tensors="pt", max_length=512,
+        )
+        with torch.no_grad():
+            logits_tensor = reranker_model(**inputs).logits.squeeze(-1)
+        logits: list[float] = (
+            logits_tensor.tolist()
+            if logits_tensor.ndim > 0
+            else [logits_tensor.item()]
+        )
+
+        # 7. Sigmoid 置信度 + 排序
+        for i, logit in enumerate(logits):
+            metas[i]["rerank_logit"] = logit
+            metas[i]["confidence"] = self._sigmoid(logit)
+
+        metas.sort(key=lambda x: x["confidence"], reverse=True)
+
+        # 8. 取前 top_k 条
+        return metas[:top_k]
 
     # ── 占位方法（T3 实现）──
 
