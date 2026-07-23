@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     MILVUS_DENSE_WEIGHT: float = 0.7
     MILVUS_SPARSE_WEIGHT: float = 0.3
 
+    # ---- Model Paths ----
+    EMBEDDING_MODEL_PATH: str = "src/backend/models/files/embedding/bge-m3"
+    RERANKER_MODEL_PATH: str = "src/backend/models/files/reranker/bge-reranker-large"
+
     # ---- Reranker / Confidence ----
     RERANKER_TOP_K: int = 5
     CONFIDENCE_FALLBACK_THRESHOLD: float = 0.6
