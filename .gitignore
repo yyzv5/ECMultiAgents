@@ -1,0 +1,10 @@
+__pycache__/
+.claude/
+.env.local
+.venv
+.vscode/
+src/backend/data/
+src/backend/models/files
+tests/
+state/
+docs/
