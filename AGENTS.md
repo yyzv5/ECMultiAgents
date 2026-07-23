@@ -67,11 +67,11 @@
 
 ## 4.构建、运行与开发命令
 
-使用 `uv` 管理依赖：
+使用 `uv` 管理依赖，应用入口为 `src/backend/main.py`（模块路径 `backend.main`）：
 
 ```bash
 uv sync                      # 按 lock 文件同步依赖
-uv run python main.py        # 启动入口
+uv run uvicorn backend.main:app --host 127.0.0.1 --port 8000   # FastAPI 启动入口（推荐）
 uv add <pkg>                 # 新增依赖
 uv run <cmd>                 # 在虚拟环境中执行命令
 ```
