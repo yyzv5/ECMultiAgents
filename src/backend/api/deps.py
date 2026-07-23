@@ -25,17 +25,13 @@ M1.3 仅要求模块可被 import;M5/M6 真实 graph 模块与 M4.3 的
 ``yield None``;FastAPI Depends 注册链仍可成功,只有真正发起请求时消费方
 才会拿到 None。M4.3 接入后 ``SessionLocal`` 存在,自动进入真实 session 分支。
 """
-from __future__ import annotations
+
 
 from collections.abc import Generator
 from functools import lru_cache
-from typing import Any, TYPE_CHECKING
+from typing import Any
 
-# 运行时类型注解用字面量,避免 M5/M6 未安装时 import 失败。
-# ``TYPE_CHECKING`` 块仅在静态类型检查器中生效,运行时不会触发 import。
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session
 
 
 # ---------- M5/M6 模块预导入(try/except ImportError 占位) ----------
@@ -67,7 +63,7 @@ except ImportError:
 
 # ---------- 请求级: 数据库会话(get_db) ----------
 
-def get_db() -> Generator["Session" | None, None, None]:
+def get_db() -> Generator[Session | None, None, None]:
     """FastAPI ``Depends`` 工厂: 每次请求一个新 session,请求结束后关闭。
 
     连接字符串将由 M4.3 的 :func:`backend.db.session._build_engine_url`
