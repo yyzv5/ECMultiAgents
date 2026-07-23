@@ -291,8 +291,38 @@ class MilvusClient:
     # ── 占位方法（T3 实现）──
 
     def insert(self, docs: list[dict]) -> None:
-        """批量插入文档。T3 实现。"""
-        raise NotImplementedError
+        """批量插入文档到 Milvus。
+
+        每个 doc 需含 "text" 和 "source" 字段。内部自动进行 BGE-M3 编码。
+
+        Args:
+            docs: [{"text": "...", "source": "..."}, ...]
+        """
+        if not docs:
+            return
+
+        texts = [d["text"] for d in docs]
+        sources = [d["source"] for d in docs]
+
+        # 编码
+        dense_vecs, sparse_weights_list = self.embed_documents(texts)
+
+        # 转换稀疏向量格式
+        sparse_vecs = [
+            self._sparse_to_milvus(sw) for sw in sparse_weights_list
+        ]
+
+        # 构造插入数据（字段顺序须与 Schema 一致：text, source, dense_vector, sparse_vector）
+        data = [
+            texts,
+            sources,
+            dense_vecs,
+            sparse_vecs,
+        ]
+
+        self._collection.insert(data)
+        self._collection.flush()
+        logger.info("Inserted %d documents into '%s'.", len(docs), settings.MILVUS_COLLECTION)
 
     def close(self) -> None:
         """断开 Milvus 连接，释放资源。"""
