@@ -194,7 +194,7 @@ class MilvusClient:
         """Sigmoid 映射: logit → 置信度 (0~1)。"""
         return 1.0 / (1.0 + math.exp(-x))
 
-    # ── 占位方法（T2 实现）──
+    # ── 混合检索 ──
 
     def hybrid_search(self, query: str, top_k: int | None = None) -> list[dict]:
         """完整检索链路：编码 → 混合检索 → 重排 → 置信度。
@@ -288,7 +288,7 @@ class MilvusClient:
         # 8. 取前 top_k 条
         return metas[:top_k]
 
-    # ── 占位方法（T3 实现）──
+    # ── 批量插入 ──
 
     def insert(self, docs: list[dict]) -> None:
         """批量插入文档到 Milvus。
