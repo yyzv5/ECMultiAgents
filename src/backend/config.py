@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     MINIMAX_API_KEY: SecretStr
     DEFAULT_LLM: str = "deepseek"
     LLM_TIMEOUT: int = 30
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+    MINIMAX_MODEL: str = "Minimax-M3"
 
     # ---- Milvus ----
     MILVUS_HOST: str
