@@ -45,7 +45,7 @@ class Settings(BaseSettings):
 
     # ---- Model Paths ----
     EMBEDDING_MODEL_PATH: str = "src/backend/models/files/embedding/bge-m3"
-    RERANKER_MODEL_PATH: str = "src/backend/models/files/reranker/bge-reranker-v2-m3"
+    RERANKER_MODEL_PATH: str = "src/backend/models/files/reranker/bge-reranker-large"
 
     # ---- Reranker / Confidence ----
     RERANKER_TOP_K: int = 5
