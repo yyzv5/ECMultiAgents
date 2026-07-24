@@ -2,5 +2,38 @@
 
 from backend.models.user import Base, User
 from backend.models.product import AdPerformance, ProductSale
+from backend.models.schemas import (
+    APIResponse,
+    AuditIssue,
+    ChatRequest,
+    ChatResponseData,
+    DataAnalyzeRequest,
+    DataResponseData,
+    ListingAuditRequest,
+    ListingAuditResponseData,
+    LoginRequest,
+    RegisterRequest,
+    ResumeRequest,
+    TokenResponse,
+    Variation,
+)
 
-__all__ = ["Base", "User", "ProductSale", "AdPerformance"]
+__all__ = [
+    "APIResponse",
+    "AdPerformance",
+    "AuditIssue",
+    "Base",
+    "ChatRequest",
+    "ChatResponseData",
+    "DataAnalyzeRequest",
+    "DataResponseData",
+    "ListingAuditRequest",
+    "ListingAuditResponseData",
+    "LoginRequest",
+    "ProductSale",
+    "RegisterRequest",
+    "ResumeRequest",
+    "TokenResponse",
+    "User",
+    "Variation",
+]
