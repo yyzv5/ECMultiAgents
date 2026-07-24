@@ -3,6 +3,7 @@ __pycache__/
 .env.local
 .venv
 .vscode/
+data/
 src/backend/data/
 src/backend/models/files
 tests/
