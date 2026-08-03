@@ -539,7 +539,7 @@ def _init_milvus() -> None:
 
     client = MilvusClient()
     dense_vecs, sparse_weights_list = client.embed_documents([d["text"] for d in docs])
-    sparse_vecs = [MilvusClient._sparse_to_milvus(sw) for sw in sparse_weights_list]
+    sparse_vecs = MilvusClient._sparse_to_csr_rows(sparse_weights_list)
 
     texts = [d["text"] for d in docs]
     sources = [d["source"] for d in docs]
@@ -571,8 +571,11 @@ def main() -> None:
     logger.info("========== Milvus Initialization ==========")
     try:
         _init_milvus()
-    except ImportError as exc:
-        logger.warning("[Milvus] Import failed (%s), skipping Milvus init.", exc)
+    except ModuleNotFoundError as exc:
+        if exc.name == "pymilvus":
+            logger.warning("[Milvus] pymilvus not installed, skipping Milvus init.")
+        else:
+            raise
     except Exception:
         logger.exception("[Milvus] Initialization failed.")
         raise

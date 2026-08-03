@@ -69,6 +69,10 @@ def get_db() -> Generator[Session | None, None, None]:
     连接字符串将由 M4.3 的 :func:`backend.db.session._build_engine_url`
     拼接;本函数只负责 ``SessionLocal()`` 的创建与 ``close()``。
 
+    注意 (L06): ``SessionLocal()`` 返回 ``sessionmaker`` 实例(callable),
+    必须**二次调用** ``SessionLocal()()`` 才能得到 ``Session``。
+    SQLAlchemy ``sessionmaker`` 的设计是"工厂的工厂"。
+
     Yields:
         ``Session`` 实例(M4.3 落地后);M4.3 缺位时 ``yield None`` 占位。
     """
@@ -82,7 +86,7 @@ def get_db() -> Generator[Session | None, None, None]:
         yield None
         return
 
-    db = SessionLocal()
+    db = SessionLocal()()
     try:
         yield db
     finally:

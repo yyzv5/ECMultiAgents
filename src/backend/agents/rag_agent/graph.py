@@ -186,7 +186,7 @@ def web_search_node(state: RagState) -> dict:
     logger.info("web_search: query=%r", rewritten)
 
     try:
-        result = web_search(query=rewritten, max_results=5)
+        result = web_search.invoke({"query": rewritten, "max_results": 5})
         if isinstance(result, str):
             logger.warning("web_search_node: 搜索返回错误: %s", result)
             web_results: list[dict[str, str]] = []

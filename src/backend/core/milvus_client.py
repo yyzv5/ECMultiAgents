@@ -63,12 +63,13 @@ class MilvusClient:
 
     def _load_collection(self) -> None:
         """加载 Collection 到内存。"""
-        from pymilvus import Collection, CollectionNotFoundException
+        from pymilvus import Collection
+        from pymilvus.exceptions import CollectionNotExistException
 
         name = settings.MILVUS_COLLECTION
         try:
             self._collection = Collection(name)
-        except CollectionNotFoundException:
+        except CollectionNotExistException:
             msg = (
                 f"Milvus collection '{name}' not found. "
                 "Run 'python src/backend/db/init_data.py' to create it."
@@ -180,12 +181,58 @@ class MilvusClient:
 
         Returns:
             {"indices": [...], "values": [...]}。
+
+        Note:
+            该 dict 格式仅用于内部中转;传给 ``AnnSearchRequest`` 时
+            必须再转成 ``[(token_id, weight), ...]`` pairs 列表 ——
+            pymilvus 2.6 的 ``entity_is_sparse_matrix`` 只识别 pairs
+            或 scipy CSR,对 dict 会误判为稠密向量导致 ``struct.error``。
         """
         if not lexical_weights:
             return {"indices": [], "values": []}
         indices = list(lexical_weights.keys())
         values = list(lexical_weights.values())
         return {"indices": indices, "values": values}
+
+    @staticmethod
+    def _sparse_to_pairs(lexical_weights: dict[int, float]) -> list[tuple[int, float]]:
+        """BGE-M3 稀疏权重 → Milvus ``AnnSearchRequest`` 接受的行格式。
+
+        pymilvus 2.6 的 ``entity_is_sparse_matrix`` 要求稀疏行是
+        ``[(token_id, weight), ...]`` 元组列表(或 scipy CSR 单行);
+        ``{"indices": [...], "values": [...]}`` dict 格式会被误判为稠密
+        向量,触发 ``struct.error: required argument is not a float``。
+
+        Args:
+            lexical_weights: {token_id: weight}。
+
+        Returns:
+            ``[(token_id, weight), ...]`` 列表。
+        """
+        return [(int(k), float(v)) for k, v in lexical_weights.items()]
+
+    @staticmethod
+    def _sparse_to_csr_rows(
+        sparse_weights_list: list[dict[int, float]],
+    ) -> "csr_matrix":
+        """BGE-M3 稀疏权重列表 → scipy CSR 稀疏矩阵（ORM insert 用）。
+
+        pymilvus 2.6 的 ``Collection.insert`` 稀疏向量字段接受 scipy
+        ``csr_matrix``（整批一行一向量），而 ``_sparse_to_milvus`` 的 dict
+        格式仅 ``hybrid_search`` 的 ``AnnSearchRequest`` 接受。
+        """
+        import scipy.sparse as sp
+
+        rows, cols, vals = [], [], []
+        for row_idx, weights in enumerate(sparse_weights_list):
+            for token_id, weight in weights.items():
+                rows.append(row_idx)
+                cols.append(token_id)
+                vals.append(weight)
+        return sp.csr_matrix(
+            (vals, (rows, cols)),
+            shape=(len(sparse_weights_list), max(cols) + 1 if cols else 0),
+        )
 
     # ── Sigmoid ──
 
@@ -215,7 +262,6 @@ class MilvusClient:
 
         # 1. 编码
         dense_vec, sparse_weights = self.embed_query(query)
-        sparse_vec = self._sparse_to_milvus(sparse_weights)
 
         # 2. 构建 AnnSearchRequest
         req_dense = AnnSearchRequest(
@@ -225,7 +271,7 @@ class MilvusClient:
             limit=settings.MILVUS_HYBRID_TOP_K,
         )
         req_sparse = AnnSearchRequest(
-            data=[sparse_vec],
+            data=[self._sparse_to_pairs(sparse_weights)],
             anns_field="sparse_vector",
             param={"metric_type": "IP", "params": {}},
             limit=settings.MILVUS_HYBRID_TOP_K,
@@ -307,10 +353,8 @@ class MilvusClient:
         # 编码
         dense_vecs, sparse_weights_list = self.embed_documents(texts)
 
-        # 转换稀疏向量格式
-        sparse_vecs = [
-            self._sparse_to_milvus(sw) for sw in sparse_weights_list
-        ]
+        # 转换稀疏向量格式（ORM insert 用 scipy CSR）
+        sparse_vecs = self._sparse_to_csr_rows(sparse_weights_list)
 
         # 构造插入数据（字段顺序须与 Schema 一致：text, source, dense_vector, sparse_vector）
         data = [
