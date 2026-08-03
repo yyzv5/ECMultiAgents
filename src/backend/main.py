@@ -10,10 +10,23 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.v1.router import router as v1_router
 
 app = FastAPI(title="ECMultiAgents", version="0.1.0")
+
+# CORS（M8 接入）—— 浏览器从 http://localhost:5173 调 http://127.0.0.1:8000
+# 属于跨域，必须在应用层放宽。CORS 是基础设施层关注点（影响所有路由），
+# 归 main.py 一处最直观；不引入新文件（YAGNI）。前端另配 Vite proxy /api 双保险。
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(v1_router, prefix="/v1")
 
 

@@ -9,8 +9,12 @@
 设计要点:
     - engine 与 SessionLocal 都通过 ``@functools.lru_cache`` 懒构造,
       避免 import 时连 DB;FastAPI 启动后才首次实例化。
+    - ``SessionLocal()`` 返回 ``sessionmaker`` 实例(可调用对象);
+      调用方必须**二次调用** ``SessionLocal()()`` 才会得到 ``Session``。
+      SQLAlchemy 的 ``sessionmaker`` 设计即如此 —— 它是工厂的工厂。
     - ``get_db()`` 不在本模块实现,由 :mod:`backend.api.deps` 接管
-      (M1.3 阶段已埋 ``from backend.db.session import SessionLocal``)。
+      (M1.3 阶段已埋 ``from backend.db.session import SessionLocal``);
+      ``get_db`` 内部 ``db = SessionLocal()()``。
     - 连接字符串使用 ``urllib.parse.quote_plus`` 编码 password,
       防特殊字符(``@`` / ``:`` / ``/``)触发 URL 解析错误。
 """
@@ -61,7 +65,11 @@ def engine() -> Engine:
 
 @lru_cache(maxsize=1)
 def SessionLocal() -> sessionmaker[Session]:  # noqa: N802
-    """``sessionmaker`` 工厂(懒加载)。
+    """``sessionmaker`` 工厂(懒加载,单例)。
+
+    ``SessionLocal()`` 返回 ``sessionmaker`` 实例;调用方需二次调用
+    ``SessionLocal()()`` 得 ``Session``。SQLAlchemy ``sessionmaker`` 的设计
+    是"工厂的工厂" —— 第一次调用得工厂,第二次调用得产品。
 
     ``expire_on_commit=False`` 避免 commit 后实例属性失效,
     与 FastAPI Depends 模式契合(请求结束后再关闭)。
