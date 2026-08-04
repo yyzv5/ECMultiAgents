@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     MILVUS_HOST: str
     MILVUS_PORT: int
     MILVUS_COLLECTION: str = "knowledge_base"
-    MILVUS_HYBRID_TOP_K: int = 20
+    MILVUS_HYBRID_TOP_K: int = 10  # 粗召回候选数（HNSW 检索 → reranker 精排）
     MILVUS_DENSE_WEIGHT: float = 0.7
     MILVUS_SPARSE_WEIGHT: float = 0.3
 
@@ -69,6 +69,9 @@ class Settings(BaseSettings):
 
     # ---- Checkpoint ----
     CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
+
+    # ---- 启动预热 ----
+    MODEL_PREWARM: bool = True  # 启动时预热 EMBEDDING/RERANKER 模型；测试环境设为 false
 
     # ---- 跨字段校验 ----
     @model_validator(mode="after")

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import math
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -80,7 +81,7 @@ class MilvusClient:
         logger.info("Collection '%s' loaded into memory.", name)
 
     def _load_embed_model(self) -> BGEM3FlagModel:
-        """惰性加载 BGE-M3 编码模型（本地路径）。"""
+        """惰性加载 BGE-M3 编码模型（本地路径），进程内只加载一次。"""
         if self._embed_model is None:
             from FlagEmbedding import BGEM3FlagModel
 
@@ -91,20 +92,40 @@ class MilvusClient:
         return self._embed_model
 
     def _load_reranker(self) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
-        """惰性加载 BGE-Reranker 模型（本地路径，transformers 直接加载）。"""
+        """惰性加载 BGE-Reranker 模型（本地路径，transformers 直接加载），进程内只加载一次。"""
         if self._reranker_model is None:
-            import torch
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
             model_path = str(_PROJECT_ROOT / settings.RERANKER_MODEL_PATH)
             logger.info("Loading BGE-Reranker model from %s ...", model_path)
             self._reranker_tokenizer = AutoTokenizer.from_pretrained(model_path)
+            # CPU 无 fp16 硬件加速：fp16 反而慢 2-4 倍（每步都要转精度），
+            # 用 fp32 默认精度推理。
             self._reranker_model = AutoModelForSequenceClassification.from_pretrained(
-                model_path, dtype=torch.float16
+                model_path
             )
             self._reranker_model.eval()
             logger.info("BGE-Reranker model loaded.")
         return self._reranker_model, self._reranker_tokenizer
+
+    def warmup(self) -> None:
+        """预热：加载 embedding 与 reranker 模型（进程内只加载一次，此后常驻内存）。
+
+        供 FastAPI lifespan 启动时显式调用；加载完成后才算正式启动。
+        模型加载失败不阻塞服务启动（检索端点届时再报错），但会记录错误日志。
+        """
+        try:
+            logger.info("正在加载 EMBEDDING 模型 ...")
+            self._load_embed_model()
+            logger.info("EMBEDDING 模型加载完成。")
+        except Exception:
+            logger.exception("EMBEDDING 模型加载失败")
+        try:
+            logger.info("正在加载 RERANKER 模型 ...")
+            self._load_reranker()
+            logger.info("RERANKER 模型加载完成。")
+        except Exception:
+            logger.exception("RERANKER 模型加载失败")
 
     # ── 编码接口 ──
 
@@ -260,6 +281,10 @@ class MilvusClient:
         if top_k is None:
             top_k = settings.RERANKER_TOP_K
 
+        # 粗召回候选数：HNSW 近似检索只捞前 N 条给 reranker 精排。
+        # 当前配置 10（候选太多会拖慢 CPU reranker 推理）。
+        candidate_k = settings.MILVUS_HYBRID_TOP_K
+
         # 1. 编码
         dense_vec, sparse_weights = self.embed_query(query)
 
@@ -268,13 +293,13 @@ class MilvusClient:
             data=[dense_vec],
             anns_field="dense_vector",
             param={"metric_type": "IP", "params": {"nprobe": 10}},
-            limit=settings.MILVUS_HYBRID_TOP_K,
+            limit=candidate_k,
         )
         req_sparse = AnnSearchRequest(
             data=[self._sparse_to_pairs(sparse_weights)],
             anns_field="sparse_vector",
             param={"metric_type": "IP", "params": {}},
-            limit=settings.MILVUS_HYBRID_TOP_K,
+            limit=candidate_k,
         )
 
         # 3. WeightedRanker 融合
@@ -287,7 +312,7 @@ class MilvusClient:
         search_results = self._collection.hybrid_search(
             reqs=[req_dense, req_sparse],
             rerank=ranker,
-            limit=settings.MILVUS_HYBRID_TOP_K,
+            limit=candidate_k,
             output_fields=["text", "source"],
         )
 
@@ -309,12 +334,13 @@ class MilvusClient:
                 "hybrid_score": hit.distance,
             })
 
-        # 6. Reranker 精排
+        # 6. Reranker 精排（动态 padding：按 batch 实际最长序列 pad，
+        #    不硬编码 512 —— 短文档场景能省 2/3 计算量）
         reranker_model, reranker_tokenizer = self._load_reranker()
         pairs = [[query, text] for text in texts]
         inputs = reranker_tokenizer(
             pairs, padding=True, truncation=True,
-            return_tensors="pt", max_length=512,
+            return_tensors="pt",
         )
         with torch.no_grad():
             logits_tensor = reranker_model(**inputs).logits.squeeze(-1)
@@ -376,4 +402,10 @@ class MilvusClient:
         logger.info("Milvus connection closed.")
 
 
-__all__ = ["MilvusClient"]
+__all__ = ["MilvusClient", "get_milvus_client"]
+
+
+@lru_cache(maxsize=1)
+def get_milvus_client() -> MilvusClient:
+    """全局单例 MilvusClient（连接 + 模型都常驻内存，不重复加载）。"""
+    return MilvusClient()

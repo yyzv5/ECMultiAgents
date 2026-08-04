@@ -18,7 +18,7 @@ from langgraph.graph import END, StateGraph
 from backend.agents.rag_agent.state import RagState
 from backend.config import settings
 from backend.core.llm_factory import create_llm
-from backend.core.milvus_client import MilvusClient
+from backend.core.milvus_client import get_milvus_client
 from backend.core.tools.search import web_search
 from backend.prompts.rag_prompts import (
     GENERATE_ANSWER_PROMPT,
@@ -152,7 +152,7 @@ def hybrid_retrieval_node(state: RagState) -> dict:
     logger.info("hybrid_retrieval: query=%r", rewritten)
 
     try:
-        client = MilvusClient()
+        client = get_milvus_client()  # 全局单例，模型与连接常驻
         docs = client.hybrid_search(rewritten)
     except Exception:
         logger.exception("hybrid_retrieval_node: Milvus 检索失败")
