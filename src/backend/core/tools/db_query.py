@@ -118,13 +118,17 @@ def _result_to_json(columns: list[str], rows: list[dict]) -> str:
 def _execute_select(sql: str) -> str:
     """用 SessionLocal 开新 session 执行 SELECT 并返回 JSON 字符串。
 
+    注意 (L06): ``SessionLocal()`` 返回 ``sessionmaker`` 实例(callable),
+    必须**二次调用** ``SessionLocal()()`` 才能得到 ``Session``。
+    SQLAlchemy ``sessionmaker`` 的设计是"工厂的工厂"。
+
     Args:
         sql: 合法的 SELECT SQL 字符串。
 
     Returns:
         JSON 格式的查询结果字符串。
     """
-    db = SessionLocal()
+    db = SessionLocal()()
     try:
         result = db.execute(text(sql))
         columns = list(result.keys())

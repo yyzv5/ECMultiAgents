@@ -141,7 +141,7 @@ def execute_sql_node(state: DataState) -> dict:
     if not sql:
         return {"sql_error": "no SQL to execute", "sql_result": None}
 
-    result_str = db_query(sql)
+    result_str = db_query.invoke({"sql": sql})
     if result_str.startswith("Query failed:"):
         retry_count = state.get("retry_count", 0) + 1
         logger.warning(

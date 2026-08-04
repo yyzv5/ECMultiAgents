@@ -9,12 +9,41 @@
 """
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.v1.router import router as v1_router
 
-app = FastAPI(title="ECMultiAgents", version="0.1.0")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """服务启动生命周期：预热 Milvus 检索模型（EMBEDDING + RERANKER）。
+
+    两个模型加载完成（含 Milvus 连接 + Collection 加载）后，
+    才认为后端服务正式启动。测试环境通过 ``MODEL_PREWARM=false`` 跳过。
+    """
+    from backend.config import settings
+
+    if not settings.MODEL_PREWARM:
+        logger.info("MODEL_PREWARM=false，跳过模型预热。")
+        yield
+        return
+
+    logger.info("开始预热检索模型（EMBEDDING + RERANKER）...")
+    from backend.core.milvus_client import get_milvus_client
+
+    client = get_milvus_client()  # 连接 Milvus + 加载 Collection
+    client.warmup()  # 加载两个 ML 模型并常驻内存
+    logger.info("模型预热完成，后端服务正式启动。")
+    yield
+
+
+app = FastAPI(title="ECMultiAgents", version="0.1.0", lifespan=lifespan)
 
 # CORS（M8 接入）—— 浏览器从 http://localhost:5173 调 http://127.0.0.1:8000
 # 属于跨域，必须在应用层放宽。CORS 是基础设施层关注点（影响所有路由），
